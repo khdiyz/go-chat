@@ -1,0 +1,263 @@
+<!-- static/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Go Chat with MinIO</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <style>
+        .message-list {
+            height: calc(100vh - 200px);
+            overflow-y: auto;
+        }
+        .message {
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            border-radius: 8px;
+        }
+        .system-message {
+            background-color: #f0f0f0;
+            color: #666;
+            font-style: italic;
+        }
+        .user-message {
+            background-color: #e3f2fd;
+        }
+        .my-message {
+            background-color: #e1f5fe;
+            margin-left: auto;
+            text-align: right;
+        }
+        .file-message {
+            display: flex;
+            align-items: center;
+        }
+        .file-icon {
+            margin-right: 8px;
+            font-size: 24px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto p-4">
+        <h1 class="text-2xl font-bold mb-4 text-center">Go Chat with MinIO</h1>
+        
+        <!-- Username Input -->
+        <div id="username-form" class="mb-4 p-4 bg-white rounded shadow">
+            <label for="username" class="block mb-2">Enter your username:</label>
+            <input type="text" id="username" class="border p-2 w-full mb-2" placeholder="Username">
+            <button id="join-btn" class="bg-blue-500 text-white px-4 py-2 rounded">Join Chat</button>
+        </div>
+        
+        <!-- Chat Container (Initially Hidden) -->
+        <div id="chat-container" class="hidden">
+            <!-- Messages List -->
+            <div class="bg-white rounded shadow mb-4 p-4 message-list" id="messages">
+                <!-- Messages will be added here -->
+            </div>
+            
+            <!-- Message Input -->
+            <div class="bg-white rounded shadow p-4">
+                <div class="flex mb-2">
+                    <input type="text" id="message-input" class="border p-2 flex-grow mr-2" placeholder="Type a message...">
+                    <button id="send-btn" class="bg-blue-500 text-white px-4 py-2 rounded">Send</button>
+                </div>
+                
+                <!-- File Upload -->
+                <div class="mt-2">
+                    <label for="file-input" class="block mb-2">Share a file:</label>
+                    <div class="flex">
+                        <input type="file" id="file-input" class="border p-2 flex-grow mr-2">
+                        <button id="upload-btn" class="bg-green-500 text-white px-4 py-2 rounded">Upload</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Elements
+            const usernameForm = document.getElementById('username-form');
+            const chatContainer = document.getElementById('chat-container');
+            const messagesDiv = document.getElementById('messages');
+            const usernameInput = document.getElementById('username');
+            const messageInput = document.getElementById('message-input');
+            const fileInput = document.getElementById('file-input');
+            const joinBtn = document.getElementById('join-btn');
+            const sendBtn = document.getElementById('send-btn');
+            const uploadBtn = document.getElementById('upload-btn');
+            
+            // Variables
+            let username = '';
+            let ws = null;
+
+            // Join chat
+            joinBtn.addEventListener('click', function() {
+                username = usernameInput.value.trim();
+                if (username === '') {
+                    alert('Please enter a username');
+                    return;
+                }
+                
+                // Connect to WebSocket
+                connectWebSocket(username);
+                
+                // Show chat container and hide username form
+                usernameForm.classList.add('hidden');
+                chatContainer.classList.remove('hidden');
+            });
+
+            // Connect to WebSocket
+            function connectWebSocket(username) {
+                // Determine correct WebSocket URL (http -> ws, https -> wss)
+                const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${location.host}/ws?username=${encodeURIComponent(username)}`;
+                
+                ws = new WebSocket(wsUrl);
+                
+                // Connection opened
+                ws.addEventListener('open', function(event) {
+                    console.log('Connected to WebSocket');
+                    addMessage({
+                        username: 'System',
+                        content: 'Connected to chat server',
+                        timestamp: new Date()
+                    }, 'system');
+                });
+                
+                // Listen for messages
+                ws.addEventListener('message', function(event) {
+                    const msg = JSON.parse(event.data);
+                    if (msg.username === 'System') {
+                        addMessage(msg, 'system');
+                    } else if (msg.username === username) {
+                        addMessage(msg, 'my');
+                    } else {
+                        addMessage(msg, 'user');
+                    }
+                });
+                
+                // Connection closed
+                ws.addEventListener('close', function(event) {
+                    console.log('Disconnected from WebSocket');
+                    addMessage({
+                        username: 'System',
+                        content: 'Disconnected from chat server',
+                        timestamp: new Date()
+                    }, 'system');
+                });
+                
+                // Connection error
+                ws.addEventListener('error', function(event) {
+                    console.error('WebSocket error:', event);
+                    addMessage({
+                        username: 'System',
+                        content: 'Error connecting to chat server',
+                        timestamp: new Date()
+                    }, 'system');
+                });
+            }
+
+            // Send message
+            sendBtn.addEventListener('click', sendMessage);
+            messageInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+
+            function sendMessage() {
+                const content = messageInput.value.trim();
+                if (content === '') {
+                    return;
+                }
+                
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        content: content
+                    }));
+                    messageInput.value = '';
+                } else {
+                    addMessage({
+                        username: 'System',
+                        content: 'Not connected to chat server',
+                        timestamp: new Date()
+                    }, 'system');
+                }
+            }
+
+            // Upload file
+            uploadBtn.addEventListener('click', uploadFile);
+
+            function uploadFile() {
+                const file = fileInput.files[0];
+                if (!file) {
+                    alert('Please select a file');
+                    return;
+                }
+
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('username', username);
+
+                fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('File upload failed');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('File uploaded successfully:', data);
+                    fileInput.value = ''; // Clear file input
+                })
+                .catch(error => {
+                    console.error('Error uploading file:', error);
+                    addMessage({
+                        username: 'System',
+                        content: 'Error uploading file: ' + error.message,
+                        timestamp: new Date()
+                    }, 'system');
+                });
+            }
+
+            // Add message to chat
+            function addMessage(msg, type) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${type}-message`;
+                
+                const timestamp = new Date(msg.timestamp).toLocaleTimeString();
+                
+                if (msg.fileUrl) {
+                    // File message
+                    messageDiv.innerHTML = `
+                        <div>
+                            <strong>${msg.username}</strong> <small>${timestamp}</small>
+                        </div>
+                        <div class="file-message">
+                            <span class="file-icon">📎</span>
+                            <a href="${msg.fileUrl}" target="_blank" class="text-blue-500 underline">${msg.fileName}</a>
+                        </div>
+                    `;
+                } else {
+                    // Text message
+                    messageDiv.innerHTML = `
+                        <div>
+                            <strong>${msg.username}</strong> <small>${timestamp}</small>
+                        </div>
+                        <div>${msg.content}</div>
+                    `;
+                }
+                
+                messagesDiv.appendChild(messageDiv);
+                messagesDiv.scrollTop = messagesDiv.scrollHeight; // Auto-scroll to bottom
+            }
+        });
+    </script>
+</body>
+</html>
