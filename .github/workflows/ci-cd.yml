@@ -44,5 +44,5 @@ jobs:
             docker pull ${{ secrets.DOCKER_USERNAME }}/go-chat:latest
             docker stop chatapp || true
             docker rm chatapp || true
-            docker create --name chatapp --env-file /var/www/.gochat.env -p 4040:4040 ${{ secrets.DOCKER_USERNAME }}/go-chat:latest
+            docker create --name chatapp --env-file /var/www/.gochat.env -p 7776:7776 ${{ secrets.DOCKER_USERNAME }}/go-chat:latest
             docker start chatapp
